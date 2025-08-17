@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>照片文本保存工具</title>
+    <!-- 引入Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- 引入html2canvas用于截图 -->
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    
+    <!-- 自定义Tailwind配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#10B981',
+                        accent: '#F59E0B',
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- 自定义工具类 -->
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .input-focus {
+                @apply focus:ring-2 focus:ring-primary/50 focus:border-primary focus:outline-none;
+            }
+            .card-shadow {
+                @apply shadow-lg hover:shadow-xl transition-shadow duration-300;
+            }
+            .btn-effect {
+                @apply transform hover:scale-105 active:scale-95 transition-transform duration-200;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4">
+    <div class="container mx-auto max-w-6xl">
+        <header class="mb-6 text-center">
+            <h1 class="text-[clamp(1.3rem,3vw,2rem)] font-bold text-gray-800">照片与文本保存工具</h1>
+        </header>
+        
+        <!-- 可截图的内容区域 -->
+        <div id="content-to-save" class="bg-white rounded-xl p-4 md:p-6 card-shadow mb-4 flex flex-col md:flex-row gap-4">
+            <!-- 日期显示区域 -->
+            <div id="date-container" class="hidden md:block md:w-1/6 flex items-center justify-center">
+                <div class="text-center p-3 border border-gray-200 rounded-lg bg-gray-50">
+                    <p id="current-date" class="text-gray-700 font-medium text-lg"></p>
+                </div>
+            </div>
+            
+            <!-- 中间图片输入区域 -->
+            <div class="flex-1">
+                <h3 class="text-gray-700 font-medium mb-3">拍摄照片</h3>
+                
+                <div class="relative w-full aspect-square max-w-md mx-auto">
+                    <!-- 图片预览区域 -->
+                    <div id="preview-container" class="w-full h-full border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center overflow-hidden bg-gray-50">
+                        <img id="preview-image" src="" alt="拍摄的照片预览" class="w-full h-full object-contain hidden">
+                        <div id="placeholder" class="text-center p-6">
+                            <i class="fa fa-camera text-5xl text-gray-400 mb-3"></i>
+                            <p class="text-gray-500">点击下方按钮拍照</p>
+                        </div>
+                    </div>
+                    
+                    <!-- 视频流（默认隐藏） -->
+                    <video id="camera-preview" class="absolute top-0 left-0 w-full h-full object-cover hidden"></video>
+                </div>
+                
+                <div class="mt-4 flex gap-2 flex-wrap justify-center">
+                    <button id="start-camera" class="bg-primary text-white py-2 px-4 rounded-lg hover:bg-primary/90 transition-colors duration-200 flex items-center justify-center gap-2 btn-effect">
+                        <i class="fa fa-video-camera"></i>
+                        <span>开启摄像头</span>
+                    </button>
+                    <button id="take-photo" class="bg-secondary text-white py-2 px-4 rounded-lg hover:bg-secondary/90 transition-colors duration-200 flex items-center justify-center gap-2 hidden btn-effect">
+                        <i class="fa fa-camera"></i>
+                        <span>拍照</span>
+                    </button>
+                    <button id="reset-camera" class="bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600 transition-colors duration-200 flex items-center justify-center gap-2 hidden btn-effect">
+                        <i class="fa fa-refresh"></i>
+                        <span>重拍</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 右侧文本框和保存按钮 -->
+            <div class="md:w-1/3 flex flex-col">
+                <h3 class="text-gray-700 font-medium mb-3">输入文本</h3>
+                <textarea 
+                    id="right-text" 
+                    class="flex-1 p-3 border border-gray-300 rounded-lg resize-none input-focus transition-all duration-200 mb-4"
+                    placeholder="请输入文本内容..."
+                ></textarea>
+                
+                <button id="save-button" class="bg-accent text-white py-3 px-4 rounded-lg hover:bg-accent/90 transition-colors duration-200 flex items-center justify-center gap-2 btn-effect">
+                    <i class="fa fa-save"></i>
+                    <span>保存内容</span>
+                </button>
+                
+                <!-- 移动端日期显示 -->
+                <div id="mobile-date" class="mt-4 text-center hidden">
+                    <p id="current-date-mobile" class="text-gray-700 font-medium"></p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 保存状态提示 -->
+        <div id="save-status" class="hidden fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-2xl z-50">
+            <span id="status-message"></span>
+        </div>
+    </div>
+
+    <script>
+        // 获取DOM元素
+        const startCameraBtn = document.getElementById('start-camera');
+        const takePhotoBtn = document.getElementById('take-photo');
+        const resetCameraBtn = document.getElementById('reset-camera');
+        const saveButton = document.getElementById('save-button');
+        const cameraPreview = document.getElementById('camera-preview');
+        const previewImage = document.getElementById('preview-image');
+        const placeholder = document.getElementById('placeholder');
+        const rightText = document.getElementById('right-text');
+        const dateContainer = document.getElementById('date-container');
+        const currentDate = document.getElementById('current-date');
+        const currentDateMobile = document.getElementById('current-date-mobile');
+        const mobileDate = document.getElementById('mobile-date');
+        const contentToSave = document.getElementById('content-to-save');
+        const saveStatus = document.getElementById('save-status');
+        const statusMessage = document.getElementById('status-message');
+        
+        // 存储媒体流对象
+        let stream = null;
+        
+        // 显示状态消息
+        function showStatus(message, isError = false) {
+            statusMessage.textContent = message;
+            saveStatus.classList.remove('hidden');
+            
+            // 如果是错误消息，添加红色背景
+            if (isError) {
+                saveStatus.classList.add('bg-red-600');
+                saveStatus.classList.remove('bg-gray-800');
+            } else {
+                saveStatus.classList.remove('bg-red-600');
+                saveStatus.classList.add('bg-gray-800');
+            }
+            
+            // 3秒后隐藏消息
+            setTimeout(() => {
+                saveStatus.classList.add('hidden');
+            }, 3000);
+        }
+        
+        // 格式化当前日期
+        function formatDate() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            
+            return `${year}-${month}-${day}\n${hours}:${minutes}`;
+        }
+        
+        // 开启摄像头
+        startCameraBtn.addEventListener('click', async () => {
+            try {
+                // 请求访问摄像头
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } // 优先使用后置摄像头
+                });
+                
+                // 显示视频流
+                cameraPreview.srcObject = stream;
+                cameraPreview.classList.remove('hidden');
+                previewImage.classList.add('hidden');
+                placeholder.classList.add('hidden');
+                
+                // 切换按钮状态
+                startCameraBtn.classList.add('hidden');
+                takePhotoBtn.classList.remove('hidden');
+                resetCameraBtn.classList.remove('hidden');
+                
+            } catch (error) {
+                console.error('无法访问摄像头:', error);
+                showStatus('无法访问摄像头，请确保已授予相机权限', true);
+            }
+        });
+        
+        // 拍照
+        takePhotoBtn.addEventListener('click', () => {
+            if (!stream) return;
+            
+            // 创建一个canvas用于捕获当前视频帧
+            const canvas = document.createElement('canvas');
+            canvas.width = cameraPreview.videoWidth;
+            canvas.height = cameraPreview.videoHeight;
+            
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(cameraPreview, 0, 0, canvas.width, canvas.height);
+            
+            // 将canvas内容转换为图片URL
+            const imageUrl = canvas.toDataURL('image/jpeg');
+            
+            // 显示拍摄的照片
+            previewImage.src = imageUrl;
+            previewImage.classList.remove('hidden');
+            cameraPreview.classList.add('hidden');
+            
+            // 停止视频流
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+        });
+        
+        // 重置/重拍
+        resetCameraBtn.addEventListener('click', () => {
+            // 停止现有流
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            // 重置UI
+            cameraPreview.classList.add('hidden');
+            previewImage.classList.add('hidden');
+            placeholder.classList.remove('hidden');
+            
+            startCameraBtn.classList.remove('hidden');
+            takePhotoBtn.classList.add('hidden');
+            resetCameraBtn.classList.add('hidden');
+        });
+        
+        // 保存功能
+        saveButton.addEventListener('click', async () => {
+            // 检查是否已拍摄照片
+            if (previewImage.classList.contains('hidden') && !placeholder.classList.contains('hidden')) {
+                showStatus('请先拍摄照片', true);
+                return;
+            }
+            
+            // 显示当前日期
+            const formattedDate = formatDate();
+            currentDate.textContent = formattedDate;
+            currentDateMobile.textContent = formattedDate.replace('\n', ' ');
+            dateContainer.classList.remove('hidden');
+            mobileDate.classList.remove('hidden');
+            
+            try {
+                // 使用html2canvas对内容区域进行截图
+                const canvas = await html2canvas(contentToSave, {
+                    scale: 2, // 提高截图分辨率
+                    useCORS: true,
+                    logging: false
+                });
+                
+                // 创建下载链接
+                const link = document.createElement('a');
+                link.download = `photo_text_${new Date().getTime()}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                
+                showStatus('内容已成功保存');
+            } catch (error) {
+                console.error('截图保存失败:', error);
+                showStatus('保存失败，请重试', true);
+            }
+        });
+        
+        // 适配窗口大小变化
+        window.addEventListener('resize', () => {
+            // 可以在这里添加响应式调整逻辑
+        });
+    </script>
+</body>
+</html>
+    
